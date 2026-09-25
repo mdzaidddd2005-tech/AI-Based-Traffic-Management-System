@@ -1,0 +1,226 @@
+from pathlib import Path
+import zipfile, textwrap, json, os
+
+base = Path("/mnt/data/traffic_dashboard")
+base.mkdir(exist_ok=True)
+
+html = r'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>AI Traffic Command Center</title>
+<style>
+:root{
+  --bg:#07111f;--panel:#0d1a2b;--panel2:#102238;--line:#203650;
+  --text:#e8f0f8;--muted:#8ea4ba;--green:#32d583;--yellow:#ffc857;
+  --red:#ff5d67;--blue:#4da3ff;--cyan:#36d9e8;--shadow:0 12px 35px rgba(0,0,0,.25)
+}
+*{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 70% 0%,#102b48 0,#07111f 42%);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
+button,input,select{font:inherit}.app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
+.sidebar{border-right:1px solid var(--line);background:rgba(5,14,26,.82);padding:22px 16px;position:sticky;top:0;height:100vh}
+.brand{display:flex;gap:12px;align-items:center;margin-bottom:30px}.logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--blue),var(--cyan));display:grid;place-items:center;font-weight:900;color:#04101d}
+.brand h2{font-size:16px;margin:0}.brand small{color:var(--muted)}
+.nav button{width:100%;border:0;background:transparent;color:var(--muted);text-align:left;padding:13px 12px;border-radius:10px;margin:3px 0;cursor:pointer}.nav button.active,.nav button:hover{background:#12253c;color:white}
+.side-status{position:absolute;left:16px;right:16px;bottom:18px;padding:13px;border:1px solid var(--line);border-radius:12px;background:#0a1727}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green);margin-right:7px}
+main{padding:25px;max-width:1600px;width:100%;margin:auto}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.top h1{font-size:25px;margin:0 0 5px}.top p{margin:0;color:var(--muted)}.actions{display:flex;gap:9px}.btn{border:1px solid var(--line);background:#102238;color:var(--text);padding:10px 13px;border-radius:9px;cursor:pointer}.btn:hover{border-color:#3e6389}.btn.primary{background:#1764a7;border-color:#2584d4}.btn.danger{background:#4b1e25;border-color:#74313b}
+.grid{display:grid;gap:16px}.kpis{grid-template-columns:repeat(5,minmax(140px,1fr));margin-bottom:16px}.card{background:linear-gradient(180deg,rgba(16,34,56,.92),rgba(9,24,40,.92));border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:17px}.kpi .label{font-size:12px;color:var(--muted)}.kpi .value{font-size:28px;font-weight:800;margin:8px 0 4px}.delta{font-size:12px;color:var(--green)}.layout{grid-template-columns:1.35fr .65fr}.section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px}.section-title h3{margin:0;font-size:15px}.muted{color:var(--muted);font-size:12px}
+.intersection{height:430px;border-radius:12px;position:relative;overflow:hidden;background:#09101a;border:1px solid #1c3046}
+.road.v{position:absolute;left:38%;width:24%;height:100%;background:#303944}.road.h{position:absolute;top:38%;height:24%;width:100%;background:#303944}
+.road:after{content:"";position:absolute;opacity:.55}.road.v:after{left:50%;top:0;width:2px;height:100%;background:repeating-linear-gradient(to bottom,#d9dde3 0 28px,transparent 28px 52px)}.road.h:after{top:50%;left:0;width:100%;height:2px;background:repeating-linear-gradient(to right,#d9dde3 0 28px,transparent 28px 52px)}
+.junction{position:absolute;left:38%;top:38%;width:24%;height:24%;background:#333b44;border:1px solid #59616b}
+.signal{position:absolute;width:58px;text-align:center;font-size:11px;color:var(--muted)}.signal.n{top:18px;left:calc(50% - 29px)}.signal.s{bottom:18px;left:calc(50% - 29px)}.signal.e{right:18px;top:calc(50% - 29px)}.signal.w{left:18px;top:calc(50% - 29px)}
+.light{width:18px;height:18px;border-radius:50%;margin:0 auto 5px;background:#431c21;border:2px solid #66323a}.light.green{background:var(--green);box-shadow:0 0 18px rgba(50,213,131,.8);border-color:#75efb0}.light.yellow{background:var(--yellow);box-shadow:0 0 18px rgba(255,200,87,.65);border-color:#ffe29a}.signal b{color:white}
+.vehicle{position:absolute;width:10px;height:18px;border-radius:3px;background:#5bb5ff;box-shadow:0 0 8px #5bb5ff}.v1{left:46%;top:25%}.v2{left:53%;top:29%;transform:rotate(180deg)}.v3{left:29%;top:48%;transform:rotate(90deg)}.v4{left:67%;top:52%;transform:rotate(-90deg)}.v5{left:48%;top:69%;transform:rotate(180deg)}.v6{left:51%;top:76%}
+.lane-table{width:100%;border-collapse:collapse}.lane-table th,.lane-table td{text-align:left;padding:11px 7px;border-bottom:1px solid #1b3045;font-size:12px}.lane-table th{color:var(--muted);font-weight:500}.bar{height:7px;background:#182c42;border-radius:20px;overflow:hidden}.bar i{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,var(--blue),var(--cyan))}
+.status-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:20px;font-size:11px;background:#182b40}.status-pill.green{color:var(--green);background:#0e2d24}.status-pill.red{color:#ff8b93;background:#32191d}.status-pill.yellow{color:var(--yellow);background:#332b18}
+.bottom{grid-template-columns:1fr 1fr;margin-top:16px}.video{height:245px;background:#03080e;border-radius:10px;display:grid;place-items:center;overflow:hidden;border:1px solid #1c3046}.video video{width:100%;height:100%;object-fit:cover}.placeholder{color:var(--muted);text-align:center}.placeholder strong{display:block;color:#dce8f4;margin-bottom:6px}
+.events{height:245px;overflow:auto}.event{padding:10px 2px;border-bottom:1px solid #1a2c40;display:flex;justify-content:space-between;gap:10px}.event span{color:var(--muted);font-size:11px}.event b{font-size:12px}
+.chart{height:145px;display:flex;align-items:end;gap:8px;padding:12px 3px 0}.barcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px}.barcol i{width:100%;max-width:32px;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,var(--cyan),var(--blue));min-height:5px}.barcol span{font-size:9px;color:var(--muted)}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}.control label{font-size:11px;color:var(--muted);display:block;margin-bottom:6px}.control input,.control select{width:100%;background:#081523;border:1px solid var(--line);color:white;padding:9px;border-radius:8px}
+.toast{position:fixed;right:20px;bottom:20px;background:#12273d;border:1px solid #2e587c;padding:12px 15px;border-radius:10px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none}.toast.show{opacity:1;transform:none}
+@media(max-width:1100px){.app{grid-template-columns:1fr}.sidebar{display:none}.kpis{grid-template-columns:repeat(2,1fr)}.layout,.bottom{grid-template-columns:1fr}}@media(max-width:600px){main{padding:15px}.kpis{grid-template-columns:1fr 1fr}.top{align-items:flex-start;gap:10px;flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+  <div class="brand"><div class="logo">AI</div><div><h2>Traffic Command</h2><small>Smart Intersection</small></div></div>
+  <div class="nav">
+    <button class="active" onclick="showToast('Dashboard selected')">◉ Dashboard</button>
+    <button onclick="showToast('Live monitoring selected')">◌ Live Monitoring</button>
+    <button onclick="showToast('Analytics selected')">▥ Analytics</button>
+    <button onclick="showToast('Signal control selected')">⚡ Signal Control</button>
+    <button onclick="showToast('System settings selected')">⚙ Settings</button>
+  </div>
+  <div class="side-status"><span class="dot"></span><b>System Online</b><br><small class="muted">AI controller + detector ready</small></div>
+</aside>
+
+<main>
+<header class="top">
+  <div><h1>AI Traffic Management Dashboard</h1><p>Real-time density-aware signal control for a 4-way intersection</p></div>
+  <div class="actions"><button class="btn" onclick="toggleAuto()">⏯ Auto Mode</button><button class="btn primary" onclick="triggerEmergency()">🚑 Emergency</button></div>
+</header>
+
+<section class="grid kpis">
+  <div class="card kpi"><div class="label">TOTAL VEHICLES</div><div class="value" id="total">24</div><div class="delta">Live detection</div></div>
+  <div class="card kpi"><div class="label">ACTIVE LANE</div><div class="value" id="active">North</div><div class="delta">Density based</div></div>
+  <div class="card kpi"><div class="label">GREEN REMAINING</div><div class="value"><span id="timer">18</span>s</div><div class="delta">Adaptive phase</div></div>
+  <div class="card kpi"><div class="label">AVG WAIT</div><div class="value" id="wait">21s</div><div class="delta">↓ 12% vs fixed timer</div></div>
+  <div class="card kpi"><div class="label">CYCLES</div><div class="value" id="cycles">42</div><div class="delta">Controller decisions</div></div>
+</section>
+
+<section class="grid layout">
+  <div class="card">
+    <div class="section-title"><h3>Live Intersection</h3><span class="status-pill green">● AI CONTROL ACTIVE</span></div>
+    <div class="intersection">
+      <div class="road v"></div><div class="road h"></div><div class="junction"></div>
+      <div class="signal n"><div class="light green" id="ln"></div><b>NORTH</b><br><span id="cn">9 vehicles</span></div>
+      <div class="signal s"><div class="light" id="ls"></div><b>SOUTH</b><br><span id="cs">6 vehicles</span></div>
+      <div class="signal e"><div class="light" id="le"></div><b>EAST</b><br><span id="ce">5 vehicles</span></div>
+      <div class="signal w"><div class="light" id="lw"></div><b>WEST</b><br><span id="cw">4 vehicles</span></div>
+      <i class="vehicle v1"></i><i class="vehicle v2"></i><i class="vehicle v3"></i><i class="vehicle v4"></i><i class="vehicle v5"></i><i class="vehicle v6"></i>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title"><h3>Lane Intelligence</h3><span class="muted">YOLOv8 / CV</span></div>
+    <table class="lane-table"><thead><tr><th>Lane</th><th>Vehicles</th><th>Load</th><th>Signal</th></tr></thead>
+    <tbody id="laneRows"></tbody></table>
+    <div style="height:15px"></div>
+    <div class="section-title"><h3>Decision Reason</h3></div>
+    <div class="card" style="padding:12px;background:#091725"><b id="reason">DENSITY_BASED</b><p class="muted" id="reasonText">North has the highest detected vehicle density, so the controller allocates the next green phase proportionally.</p></div>
+  </div>
+</section>
+
+<section class="grid bottom">
+  <div class="card">
+    <div class="section-title"><h3>Traffic Feed</h3><button class="btn" onclick="document.getElementById('file').click()">Load Video</button></div>
+    <input id="file" type="file" accept="video/*" hidden onchange="loadVideo(event)">
+    <div class="video" id="videoBox"><div class="placeholder"><strong>No live camera connected</strong>Load <b>traffic_demo.mp4</b> or connect your Flask camera endpoint.</div></div>
+  </div>
+  <div class="card">
+    <div class="section-title"><h3>Vehicle Flow — Last 8 Cycles</h3><span class="muted">vehicles</span></div>
+    <div class="chart" id="chart"></div>
+    <div class="section-title" style="margin-top:10px"><h3>Event Log</h3><span class="muted">latest first</span></div>
+    <div class="events" id="events"></div>
+  </div>
+</section>
+
+<section class="card" style="margin-top:16px">
+  <div class="section-title"><h3>Controller Configuration</h3><span class="muted">matches signal_controller.py concepts</span></div>
+  <div class="controls">
+    <div class="control"><label>Minimum Green (seconds)</label><input id="minGreen" type="number" value="10" min="1" max="60"></div>
+    <div class="control"><label>Maximum Green (seconds)</label><input id="maxGreen" type="number" value="60" min="5" max="120"></div>
+    <div class="control"><label>Starvation Limit (seconds)</label><input id="starve" type="number" value="90" min="10" max="300"></div>
+    <div class="control"><label>Control Strategy</label><select><option>Density + Anti-Starvation</option><option>Fixed Timer</option><option>Emergency Priority</option></select></div>
+  </div>
+</section>
+</main>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const lanes=['North','East','South','West'];
+let data={North:9,East:5,South:6,West:4}, active='North', timer=18, cycles=42, auto=true, emergency=false;
+const colors={North:'ln',East:'le',South:'ls',West:'lw'}, counts={North:'cn',East:'ce',South:'cs',West:'cw'};
+function render(){
+  const total=Object.values(data).reduce((a,b)=>a+b,0);
+  document.getElementById('total').textContent=total;
+  document.getElementById('active').textContent=active;
+  document.getElementById('timer').textContent=timer;
+  document.getElementById('cycles').textContent=cycles;
+  document.getElementById('wait').textContent=Math.round(14+Math.random()*18)+'s';
+  lanes.forEach(l=>{document.getElementById(counts[l]).textContent=data[l]+' vehicles'; document.getElementById(colors[l]).className='light '+(l===active?'green':'');});
+  const max=Math.max(...Object.values(data),1);
+  document.getElementById('laneRows').innerHTML=lanes.map(l=>`<tr><td><b>${l}</b></td><td>${data[l]}</td><td><div class="bar"><i style="width:${Math.round(data[l]/max*100)}%"></i></div></td><td><span class="status-pill ${l===active?'green':'red'}">${l===active?'GREEN':'RED'}</span></td></tr>`).join('');
+}
+function addEvent(text,type='AI'){
+  const box=document.getElementById('events'), t=new Date().toLocaleTimeString();
+  box.insertAdjacentHTML('afterbegin',`<div class="event"><div><b>${type}</b> — ${text}</div><span>${t}</span></div>`);
+  while(box.children.length>7) box.lastElementChild.remove();
+}
+function updateChart(){
+  const vals=Array.from({length:8},()=>18+Math.floor(Math.random()*25));
+  document.getElementById('chart').innerHTML=vals.map((v,i)=>`<div class="barcol"><i style="height:${v*3}px"></i><span>C${i+1}</span></div>`).join('');
+}
+function nextCycle(){
+  if(!auto)return;
+  if(timer>0){timer--;render();return}
+  const max=Math.max(...lanes.map(l=>data[l]));
+  active=lanes.find(l=>data[l]===max);
+  timer=10+Math.round((data[active]/Math.max(Object.values(data).reduce((a,b)=>a+b,0),1))*50);
+  timer=Math.min(timer,60); cycles++;
+  lanes.forEach(l=>data[l]=Math.max(0,data[l]+Math.floor(Math.random()*5)-2));
+  addEvent(`GREEN → ${active} for ${timer}s (${emergency?'EMERGENCY_VEHICLE':'DENSITY_BASED'})`);
+  emergency=false; updateChart(); render();
+}
+function toggleAuto(){auto=!auto;showToast(auto?'Auto mode enabled':'Auto mode paused');addEvent(auto?'Automatic control resumed':'Automatic control paused','SYSTEM')}
+function triggerEmergency(){
+  const lane=lanes[Math.floor(Math.random()*lanes.length)]; active=lane; timer=25; emergency=true;
+  addEvent(`Emergency priority granted to ${lane}`,'🚑 EMERGENCY');render();showToast(`Emergency priority: ${lane}`);
+}
+function loadVideo(e){
+  const file=e.target.files[0]; if(!file)return;
+  const url=URL.createObjectURL(file);
+  document.getElementById('videoBox').innerHTML=`<video controls autoplay muted loop src="${url}"></video>`;
+  addEvent(`Video feed loaded: ${file.name}`,'VIDEO');
+}
+function showToast(t){const x=document.getElementById('toast');x.textContent=t;x.classList.add('show');setTimeout(()=>x.classList.remove('show'),1800)}
+updateChart(); render(); addEvent('Dashboard initialized','SYSTEM');
+setInterval(nextCycle,1000);
+</script>
+</body>
+</html>'''
+
+(base/"index.html").write_text(html, encoding="utf-8")
+
+readme = r"""# AI Traffic Command Center — Frontend
+
+This is a standalone HTML dashboard for the uploaded AI Traffic Management System.
+
+## What it represents
+- Four-way intersection with North/East/South/West signals
+- Per-lane vehicle counts
+- Density-based active signal
+- Green-time countdown
+- Cycle counter and average-wait KPI
+- Decision-reason panel
+- Event log
+- Traffic-flow chart
+- Emergency vehicle priority demo
+- Auto/manual control toggle
+- Controller configuration controls
+- Video upload/player for `traffic_demo.mp4`
+- Responsive dark command-center UI
+
+The backend project currently exposes a Python CLI rather than an HTTP API. `main.py` has `sim` and `live` modes, while the live mode sends detector counts into the `TrafficSignalController`. The HTML therefore runs in demo mode by itself.
+
+## Connect it to Python
+The clean next step is a small Flask/FastAPI bridge that exposes:
+- `GET /api/status`
+- `POST /api/control`
+- `POST /api/emergency`
+- `POST /api/video`
+- optionally a MJPEG/HLS/WebRTC camera stream
+
+Then replace the demo JavaScript state in `index.html` with `fetch()` calls to those endpoints.
+
+## Run
+Simply open `index.html` in a browser.
+
+For a local server:
+`python -m http.server 8080`
+then open `http://localhost:8080`.
+
+## Source alignment
+The UI mirrors the uploaded project concepts: YOLOv8 vehicle detection, four lane counts, density-based green allocation, anti-starvation, emergency override, and cycle decisions.
+"""
+(base/"README_FRONTEND.md").write_text(readme, encoding="utf-8")
+
+zip_path=Path("/mnt/data/AI_Traffic_Dashboard_Frontend.zip")
+with zipfile.ZipFile(zip_path,"w",zipfile.ZIP_DEFLATED) as z:
+    z.write(base/"index.html","index.html")
+    z.write(base/"README_FRONTEND.md","README_FRONTEND.md")
+
+print(f"Created: {zip_path}")
+print(f"HTML: {base/'index.html'}")

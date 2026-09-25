@@ -1,0 +1,7 @@
+# Core (needed for simulation mode and the signal controller)
+opencv-python>=4.8
+numpy>=1.24
+
+# Needed only for live/real-camera mode (vehicle_detector.py, main.py live)
+ultralytics>=8.0
+torch>=2.0
